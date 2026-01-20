@@ -1,0 +1,552 @@
+#+title: Cliff’s Development Environment — Context Snapshot
+#+author: Cliff Wulfman
+#+OPTIONS: toc:2 num:nil ^:{}
+
+* Overview
+This is a fully portable, cross-platform development environment intended
+for use on both macOS (Sonoma → Tahoe) and Linux (e.g., Princeton research
+machines).  It is HOME-centric, Unix-friendly, and designed for complete
+reproducibility.
+
+Key principles:
+- No root required.
+- Runtimes managed via =asdf=.
+- Python projects managed via =PDM=.
+- Emacs configured with Eglot + basedpyright.
+- Cloud storage via odrive without polluting development paths.
+- Clean directory layout equally usable on macOS and Linux.
+
+* Directory Layout (HOME-level FHS)
+#+begin_example
+$HOME/
+  bin/
+  repos/
+    gh/                # symlink into repos/gh for GitHub orgs
+    dotfiles/
+  opt/
+    graphdb/
+  data/
+  tmp/
+  odrive/              # Dropbox, Google Drive, Box, etc.
+  .emacs.d/            # symlinked from dotfiles/emacs
+  .zshrc               # symlink
+  .gitconfig           # symlink
+#+end_example
+
+* Dotfiles Repository Structure
+Located at =~/repos/dotfiles=.
+
+#+begin_example
+dotfiles/
+  bin/
+    bootstrap-dev-macos-asdf.sh
+    link-dotfiles.sh
+  emacs/
+    cew.org
+    init.el
+    dev-env.el        # tangled from this document
+  zsh/
+    zshrc
+  git/
+    gitconfig
+    gitignore_global
+  docs/
+    dev-environment-context.org
+#+end_example
+
+Symlink setup:
+#+begin_example
+ln -s ~/repos/dotfiles/zsh/zshrc ~/.zshrc
+ln -s ~/repos/dotfiles/git/gitconfig ~/.gitconfig
+ln -s ~/repos/dotfiles/git/gitignore_global ~/.gitignore_global
+mkdir -p ~/.emacs.d
+ln -s ~/repos/dotfiles/emacs/cew.org ~/.emacs.d/cew.org
+ln -s ~/repos/dotfiles/emacs/init.el ~/.emacs.d/init.el
+#+end_example
+
+* Bootstrap Script (tangled)
+The following block tangles to =../bin/bootstrap-dev-macos-asdf.sh= and
+implements the macOS bootstrap using Homebrew, asdf, pipx, and PDM.
+
+#+begin_src bash :tangle ../bin/bootstrap-dev-macos-asdf.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================================
+# Cliff's macOS dev bootstrap script (with asdf integration)
+# - Installs Homebrew (if needed)
+# - Installs core CLI tools
+# - Installs asdf for managing runtimes (python, nodejs, java, clojure, sbcl)
+# - Installs PDM and basedpyright via pipx
+# - Installs Emacs
+# - Sets up shell environment hooks
+# ============================================================
+
+log() {
+  printf "\n[BOOTSTRAP] %s\n" "$*"
+}
+
+# ------------------------------
+# 0. Xcode command line tools
+# ------------------------------
+log "Checking for Xcode Command Line Tools..."
+if ! xcode-select -p >/dev/null 2>&1; then
+  log "Xcode Command Line Tools not found. Triggering installer..."
+  xcode-select --install || true
+  log "Please complete the GUI installer, then re-run this script."
+  exit 1
+else
+  log "Xcode Command Line Tools found."
+fi
+
+# ------------------------------
+# 1. Homebrew
+# ------------------------------
+if ! command -v brew >/dev/null 2>&1; then
+  log "Homebrew not found. Installing Homebrew..."
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+else
+  log "Homebrew already installed. Skipping."
+fi
+
+# Ensure brew is in PATH for this script
+if [[ "$(uname -m)" == "arm64" ]]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+else
+  eval "$(/usr/local/bin/brew shellenv)"
+fi
+
+log "Updating Homebrew..."
+brew update
+
+# ------------------------------
+# 2. Core packages via Homebrew
+# ------------------------------
+log "Installing core CLI packages..."
+brew install \
+  git \
+  wget \
+  curl \
+  jq \
+  pipx \
+  graphviz \
+  asdf \
+  emacs
+
+# ------------------------------
+# 3. Shell configuration (.zshrc)
+# ------------------------------
+ZSHRC="${HOME}/.zshrc"
+
+log "Ensuring Homebrew shellenv and asdf init are in ~/.zshrc..."
+
+# Add brew shellenv snippet if not present
+BREW_SHELLENV_LINE='eval "$($(brew --prefix)/bin/brew shellenv)"'
+if ! grep -Fq "$BREW_SHELLENV_LINE" "$ZSHRC" 2>/dev/null; then
+  {
+    echo ""
+    echo "# Added by dev bootstrap (Homebrew)"
+    echo "$BREW_SHELLENV_LINE"
+  } >> "$ZSHRC"
+fi
+
+# Add asdf init if not present
+ASDF_INIT_LINE='. "$(brew --prefix asdf)/libexec/asdf.sh"'
+if ! grep -Fq "$ASDF_INIT_LINE" "$ZSHRC" 2>/dev/null; then
+  {
+    echo ""
+    echo "# Added by dev bootstrap (asdf)"
+    echo "$ASDF_INIT_LINE"
+  } >> "$ZSHRC"
+fi
+
+# Ensure pipx/LOCAL bin paths (pipx ensurepath usually does this, but we guard)
+if ! grep -Fq 'export PATH="$HOME/.local/bin:$PATH"' "$ZSHRC" 2>/dev/null; then
+  {
+    echo ""
+    echo "# Added by dev bootstrap (pipx)"
+    echo 'export PATH="$HOME/.local/bin:$PATH"'
+  } >> "$ZSHRC"
+fi
+
+# PDM_HOME is nice to have explicitly
+if ! grep -Fq 'export PDM_HOME=' "$ZSHRC" 2>/dev/null; then
+  {
+    echo ""
+    echo "# PDM configuration"
+    echo 'export PDM_HOME="$HOME/.local/share/pdm"'
+  } >> "$ZSHRC"
+fi
+
+log "Reloading shell environment for this script run..."
+# Re-evaluate Brew and asdf for this script invocation
+eval "$($(brew --prefix)/bin/brew shellenv)"
+. "$(brew --prefix asdf)/libexec/asdf.sh"
+
+# ------------------------------
+# 4. asdf runtimes (python, nodejs, java, clojure, sbcl)
+# ------------------------------
+log "Adding asdf plugins (python, nodejs, java, clojure, sbcl) if needed..."
+
+asdf plugin add python  >/dev/null 2>&1 || log "python plugin already present"
+asdf plugin add nodejs >/dev/null 2>&1 || log "nodejs plugin already present"
+asdf plugin add java   >/dev/null 2>&1 || log "java plugin already present"
+
+asdf plugin add clojure https://github.com/halcyon/asdf-clojure.git >/dev/null 2>&1 || log "clojure plugin already present"
+asdf plugin add sbcl    https://github.com/smashedtoatoms/asdf-sbcl.git >/dev/null 2>&1 || log "sbcl plugin already present"
+
+log "Installing baseline runtimes with asdf..."
+
+PY_VER="3.12.4"
+NODE_VER="22.5.1"
+JAVA_VER="temurin-21.0.4+7"
+CLJ_VER="1.11.3.1463"   # adjust if this exact version is unavailable
+SBCL_VER="2.4.11"       # adjust to a valid version from `asdf list-all sbcl`
+
+asdf install python "${PY_VER}" || true
+asdf global python "${PY_VER}"
+
+# NodeJS plugin requires importing release team keys once.
+# If you haven't done so previously, you may need to run:
+#   bash ~/.asdf/plugins/nodejs/bin/import-release-team-keyring
+# before installing nodejs versions.
+if ! asdf list nodejs "${NODE_VER}" >/dev/null 2>&1; then
+  log "Attempting nodejs ${NODE_VER} install. If this fails due to GPG keys, run:"
+  log "  bash ~/.asdf/plugins/nodejs/bin/import-release-team-keyring"
+  asdf install nodejs "${NODE_VER}" || true
+fi
+asdf global nodejs "${NODE_VER}" || true
+
+asdf install java "${JAVA_VER}" || true
+asdf global java "${JAVA_VER}"
+
+# Clojure (CLI tools)
+asdf install clojure "${CLJ_VER}" || true
+asdf global clojure "${CLJ_VER}"
+
+# Common Lisp (SBCL)
+asdf install sbcl "${SBCL_VER}" || true
+asdf global sbcl "${SBCL_VER}"
+
+log "asdf runtime setup complete:"
+asdf current || true
+
+# ------------------------------
+# 5. Python tooling: pipx, PDM, basedpyright
+# ------------------------------
+log "Ensuring pipx is on PATH..."
+pipx ensurepath || true
+
+log "Installing PDM and basedpyright via pipx..."
+pipx install pdm || true
+pipx install basedpyright || true
+
+# ------------------------------
+# 6. Final messages
+# ------------------------------
+cat <<'EOF'
+
+============================================================
+Bootstrap complete (from the script's perspective).
+
+Next steps:
+
+1. Open a NEW terminal so that updated PATH and environment
+   from ~/.zshrc take effect (brew, asdf, pipx, PDM_HOME).
+
+2. Verify tools:
+   - brew --version
+   - asdf --version
+   - asdf current
+   - python --version
+   - node --version
+   - java --version
+   - clojure --version
+   - sbcl --version
+   - pdm --version
+   - basedpyright --version
+   - emacs --version
+
+3. For Emacs:
+   - Put your config in ~/.emacs.d/ (e.g. cew.org + init.el)
+   - Start Emacs and let it install packages.
+
+4. For new Python projects:
+   - Use your template:
+       git clone https://github.com/cwulfman/python-project-template myproj
+       cd myproj
+       pdm install -d
+   - Consider adding a .tool-versions file like:
+       python ${PY_VER}
+       nodejs ${NODE_VER}
+       java ${JAVA_VER}
+       clojure ${CLJ_VER}
+       sbcl ${SBCL_VER}
+   - Emacs + Eglot should pick up basedpyright and .venv automatically.
+
+5. For GraphDB:
+   - Download the latest GraphDB distribution from Ontotext.
+   - Unpack to: ~/opt/graphdb
+   - Start it per their instructions; then point Emacs/SPARQL tools
+     at http://localhost:7200/repositories/your-repo
+
+You can safely re-run this script; it is mostly idempotent.
+============================================================
+
+EOF
+
+log "Done."
+#+end_src
+
+* Dotfile Linking Script (tangled)
+The following script creates the recommended symlinks from =~/repos/dotfiles=
+into =$HOME=.  It tangles to =../bin/link-dotfiles.sh=.
+
+#+begin_src bash :tangle ../bin/link-dotfiles.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Link core dotfiles from ~/repos/dotfiles into $HOME.
+DOTFILES_ROOT="${DOTFILES_ROOT:-$HOME/repos/dotfiles}"
+
+echo "[link-dotfiles] Using DOTFILES_ROOT=${DOTFILES_ROOT}"
+
+link() {
+  local target="$1"
+  local linkname="$2"
+
+  if [ -e "${linkname}" ] && [ ! -L "${linkname}" ]; then
+    echo "[link-dotfiles] WARNING: ${linkname} exists and is not a symlink; skipping."
+    return
+  fi
+
+  if [ -L "${linkname}" ]; then
+    echo "[link-dotfiles] Replacing existing symlink ${linkname}"
+    rm -f "${linkname}"
+  fi
+
+  echo "[link-dotfiles] ln -s ${target} ${linkname}"
+  ln -s "${target}" "${linkname}"
+}
+
+# Zsh
+link "${DOTFILES_ROOT}/zsh/zshrc" "${HOME}/.zshrc"
+
+# Git
+link "${DOTFILES_ROOT}/git/gitconfig" "${HOME}/.gitconfig"
+link "${DOTFILES_ROOT}/git/gitignore_global" "${HOME}/.gitignore_global"
+
+# Emacs
+mkdir -p "${HOME}/.emacs.d"
+link "${DOTFILES_ROOT}/emacs/cew.org" "${HOME}/.emacs.d/cew.org"
+link "${DOTFILES_ROOT}/emacs/init.el" "${HOME}/.emacs.d/init.el"
+
+echo "[link-dotfiles] Done."
+#+end_src
+
+* Runtime Management Strategy
+- =asdf= manages:
+  - python 3.12.4
+  - nodejs 22.x
+  - java (Temurin 21)
+  - clojure CLI
+  - sbcl (Common Lisp)
+- =PDM= manages per-project environments in =.venv=
+- =pipx= installs global Python tools (safe, isolated):
+  - =pdm=
+  - =basedpyright=
+
+This separates system, user, and project layers cleanly.
+
+* Cloud Storage Integration (odrive)
+Cloud sync directories live under =~/odrive=.
+
+Avoid placing inside odrive:
+- git repositories
+- =.venv= or other environment directories
+- =node_modules= or build artifacts
+
+Place inside odrive:
+- documentation intended for sharing
+- stable data sets
+- exported or derived data products
+
+Use symlinks to integrate:
+
+#+begin_example
+mkdir -p ~/data/paa_graph_kb
+ln -s "~/odrive/Google Drive/Perseus Project/paa_graph_data" \
+      ~/data/paa_graph_kb/raw
+#+end_example
+
+* Per-Project =.tool-versions=
+Typical configuration:
+
+#+begin_example
+python 3.12.4
+nodejs 22.5.1
+java temurin-21.0.4+7
+clojure 1.11.3.1463
+sbcl 2.4.11
+#+end_example
+
+This can be pruned for lighter projects.
+
+* Emacs Dev Environment Module (tangled)
+This Emacs Lisp module encapsulates environment-related tweaks that make it
+easier to work with the layout described above.  It is meant to be loaded
+from your main config (e.g., from =cew.org=) via:
+
+#+begin_example
+(require 'dev-env)
+#+end_example
+
+It tangles to =../emacs/dev-env.el=.
+
+#+begin_src emacs-lisp :tangle ../emacs/dev-env.el
+;;; dev-env.el --- Cliff's development environment helpers -*- lexical-binding: t; -*-
+
+;;; Commentary:
+;; This module contains helper functions and environment setup that assumes
+;; the directory structure described in dev-environment-context.org:
+;;   ~/repos
+;;   ~/repos/gh
+;;   ~/repos/dotfiles
+;;   ~/bin
+;;   ~/data
+;; and so on.
+
+;;; Code:
+
+(defgroup cew/dev-env nil
+  "Development environment helpers for Cliff."
+  :group 'environment)
+
+(defcustom cew/dev-root (expand-file-name "~/repos")
+  "Root directory for all version-controlled repositories."
+  :type 'directory
+  :group 'cew/dev-env)
+
+(defcustom cew/dev-gh-root (expand-file-name "gh" cew/dev-root)
+  "Root directory for GitHub repositories."
+  :type 'directory
+  :group 'cew/dev-env)
+
+(defcustom cew/dev-data-root (expand-file-name "~/data")
+  "Root directory for data sets."
+  :type 'directory
+  :group 'cew/dev-env)
+
+(defcustom cew/dev-bin-dirs
+  (list (expand-file-name "~/bin")
+        (expand-file-name "~/.local/bin"))
+  "List of user-level bin directories to prepend to PATH and `exec-path`."
+  :type '(repeat directory)
+  :group 'cew/dev-env)
+
+(defun cew/dev--prepend-to-path (dir)
+  "Prepend DIR to PATH and `exec-path` if it exists."
+  (when (file-directory-p dir)
+    (unless (member dir exec-path)
+      (setq exec-path (cons dir exec-path)))
+    (let* ((current (getenv "PATH"))
+           (path-elems (and current (split-string current path-separator t))))
+      (unless (member dir path-elems)
+        (setenv "PATH" (concat dir path-separator (or current "")))))))
+
+(defun cew/dev-init-path ()
+  "Initialize PATH and `exec-path` according to `cew/dev-bin-dirs`."
+  (interactive)
+  (dolist (dir cew/dev-bin-dirs)
+    (cew/dev--prepend-to-path dir)))
+
+;; Initialize PATH as early as possible
+(cew/dev-init-path)
+
+(defun cew/dev-open-repo (name)
+  "Open a repository named NAME under `cew/dev-root` using `dired`.
+NAME may be \"perseus-aa/paa_graph_kb\" or similar."
+  (interactive "sRepo (relative to repos/, e.g. perseus-aa/paa_graph_kb): ")
+  (let* ((path (expand-file-name name cew/dev-root)))
+    (if (file-directory-p path)
+        (dired path)
+      (user-error "No such repo directory: %s" path))))
+
+(defun cew/dev-open-gh (name)
+  "Open a GitHub-based repository relative to `cew/dev-gh-root`."
+  (interactive "sGitHub repo (e.g. perseus-aa/paa_graph_kb): ")
+  (let* ((path (expand-file-name name cew/dev-gh-root)))
+    (if (file-directory-p path)
+        (dired path)
+      (user-error "No such GitHub repo directory: %s" path))))
+
+;; Optional integration with project.el (Emacs 28+)
+(with-eval-after-load 'project
+  (defun cew/dev-project-try (dir)
+    "Detect projects under `cew/dev-root` using DIR."
+    (let ((root (locate-dominating-file dir ".git")))
+      (when (and root (string-prefix-p (file-truename cew/dev-root)
+                                       (file-truename root)))
+        (cons 'transient root))))
+
+  (add-hook 'project-find-functions #'cew/dev-project-try))
+
+(provide 'dev-env)
+
+;;; dev-env.el ends here
+#+end_src
+
+* Using =link-dotfiles.sh= on macOS and Linux
+The =link-dotfiles.sh= script creates symbolic links from =$HOME=
+to the files tracked in =~/repos/dotfiles=.  
+It is platform-agnostic and works on both macOS and Linux.
+
+** macOS Usage
+On macOS, run:
+
+#+begin_src bash
+~/repos/dotfiles/bin/link-dotfiles.sh
+#+end_src
+
+Notes for macOS:
+- macOS uses the BSD coreutils, but the script only uses portable =ln= options.
+- Ensure that =~/repos/dotfiles= exists before running.
+- If you keep Desktop/Documents in iCloud, ensure your HOME directory is *not* inside iCloud.
+
+** Linux Usage
+On Linux systems (Ubuntu, Debian, RHEL, Arch, etc.), run the same command:
+
+#+begin_src bash
+~/repos/dotfiles/bin/link-dotfiles.sh
+#+end_src
+
+Notes for Linux:
+- Works with bash, zsh, fish, etc.
+- If you prefer bash over zsh, ensure the dotfiles repo contains a =bashrc= or adjust the script.
+- If using environment modules or centrally managed shells (common on university clusters),
+  call the script *after* your shell environment is initialized.
+
+** Cross-Platform Best Practices
+- Store all version-controlled configs in =~/repos/dotfiles=.
+- Always symlink — never copy — configuration files into HOME.
+- Use =~/.localrc= or =~/.machine-local.el= for host-specific overrides.
+- Keep machine-specific paths out of shared dotfiles.
+
+* Summary
+This environment gives:
+
+- Identical workflows across macOS & Linux.
+- Reproducible and isolated Python environments.
+- Stable language runtimes managed via =asdf=.
+- An Emacs config suited for semantic-web development.
+- Safe interaction with cloud storage.
+- A clean and future-proof home directory organization.
+
+With this Org file in =~/repos/dotfiles/docs/dev-environment-context.org=,
+you can tangle directly to:
+
+- =../bin/bootstrap-dev-macos-asdf.sh=
+- =../bin/link-dotfiles.sh=
+- =../emacs/dev-env.el=
+
+and keep your entire dev-environment definition in one literate document.

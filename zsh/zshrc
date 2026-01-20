@@ -1,0 +1,12 @@
+
+# Added by dev bootstrap (Homebrew)
+eval "$($(brew --prefix)/bin/brew shellenv)"
+
+# Added by dev bootstrap (asdf)
+. "$(brew --prefix asdf)/libexec/asdf.sh"
+
+# Added by dev bootstrap (pipx)
+export PATH="$HOME/.local/bin:$PATH"
+
+# PDM configuration
+export PDM_HOME="$HOME/.local/share/pdm"
