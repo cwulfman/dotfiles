@@ -2,7 +2,7 @@
 	email = cwulfman@princeton.edu
 	name = Cliff Wulfman
 [core]
-	pager = cat
+	pager = less -F
 	editor = emacs
 [init]
 	defaultBranch = main
