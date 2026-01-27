@@ -8,12 +8,25 @@
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(custom-safe-themes
-   '("ea650f6ba4839360a905e1857f8fcce823661ade6c8d23fcba67254abc0cba1b"
+   '("19dfd2348c5c5fbf883f9cabc7ab5183c9bf0190c7d6ccbd49c7323d4424daea"
+     "2896501d2809d956f0b4fa5442f416cb3e62c82da0ef7ccbef538c67872d1967"
+     "3b31464e0f2818b0b91e53c5decf46cc4bc2b145a48cfa077965e28ec2176db6"
+     "dde7fb0b1ed1bb5b61e62bf1a00696cf099a2b290718aee9b377365b3ed992f0"
+     "ea650f6ba4839360a905e1857f8fcce823661ade6c8d23fcba67254abc0cba1b"
      "d2c76098def8b2b10b45d2092c86ca9c8b95d58fabbc8850d28899181d8f6581"
      "e604027b0160128a9bd633a63cd111227eea017cfbbe1ff5f3f7c83c9fb72bdf"
      "f76876670af99c2ca9eedecc9bb7559166726800fa9774d9e9630293354f25a4"
      "ba35218e2ee4e80235b226d72c94169195505fee0424cab82bb54f391884d469"
      default))
+ '(org-id-extra-files
+   '("/Users/wulfmanc/org/clients/dh-agency.org"
+     "/Users/wulfmanc/org/clients/oset.org"
+     "/Users/wulfmanc/org/clients/perseus.org"
+     "/Users/wulfmanc/org/clients/princeton.org"
+     "/Users/wulfmanc/org/journal.org"
+     "/Users/wulfmanc/org/note-graph-starter-kit.org"
+     "/Users/wulfmanc/org/personal.org"
+     "/Users/wulfmanc/org/tutorial.org"))
  '(package-selected-packages
    '(consult corfu denote ef-themes exec-path-from-shell just-ts-mode
              lsp-treemacs magit marginalia orderless org-contrib

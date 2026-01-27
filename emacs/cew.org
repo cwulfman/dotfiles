@@ -341,11 +341,27 @@ Order:
 #+begin_src emacs-lisp
   (use-package org
     :config
-    (setq org-startup-indented t
-          org-hide-leading-stars t
-          org-return-follows-link t))
+    (setq org-startup-indented t)
+    (setq org-hide-leading-stars t)
+    (setq org-return-follows-link t)
+    (setq org-id-link-to-org-use-id t)
+
+    ;; Make sure IDs can be indexed broadly
+    (setq org-id-locations-file (expand-file-name ".org-id-locations" user-emacs-directory))
+    (setq org-id-extra-files (directory-files-recursively (expand-file-name "~/org") "\\.org$"))
+
+    (require 'org-id)
+
+    ;; Ensure id: links have completion support
+    (org-link-set-parameters "id"
+                             :follow #'org-id-open
+                             :store  #'org-id-store-link-maybe
+                             :complete #'org-id-complete-link))
 #+end_src
-*** Org Contrib (for ob-sparql and other extras)
+
+
+
+* Org Contrib (for ob-sparql and other extras)
 #+begin_src emacs-lisp
   (use-package org-contrib
     :after org)
@@ -362,60 +378,81 @@ Order:
 : org-store-link
 
 ** Capture Templates
+:PROPERTIES:
+:ID:       2103BFA8-B966-48AF-B693-68D400CB545C
+:END:
 #+begin_src emacs-lisp
-  (defvar my/org-basic-task-template "* TODO %^{Task}
+      (defvar my/org-basic-task-template "* TODO %^{Task}
+      :PROPERTIES:
+      :Effort: %^{effort|1:00|0:05|0:15|0:30|2:00|4:00}
+      :END:
+      Captured %<%Y-%m-%d %H:%M>
+      %?
+
+      %i
+      " "Basic task data")
+
+      (setq org-capture-templates
+            (quote
+      (
+      ("j" "Journal Entry" entry
+       (file+olp+datetree "~/personal/journal.org")
+      "* %U
+      %?
+      %i
+      %a")
+
+    ("rq" "Reading: Quote" entry
+     (file+headline "~/org/reading/inbox.org" "Inbox")
+     "** Quote
+    :PROPERTIES:
+    :CREATED:  %U
+    :LOC:      %^{Location}
+    :SOURCE:   %^{Source}
+    :END:
+    ,#+begin_quote
+    %i
+    ,#+end_quote
+    %?"
+     :empty-lines 1)
+
+    ("rt" "Reading: Thought" entry
+   (file+headline "~/org/reading/inbox.org" "Inbox")
+   "** Thought
   :PROPERTIES:
-  :Effort: %^{effort|1:00|0:05|0:15|0:30|2:00|4:00}
+  :CREATED:  %U
+  :LOC:      %^{Location}
+  :SOURCE:   %^{Source}
   :END:
-  Captured %<%Y-%m-%d %H:%M>
-  %?
+  %?"
+   :empty-lines 1)
+      	
+      ("t" "Todo" entry
+       (file+olp "~/gtd/gtd.org" "INBOX")
+      "* TODO %?\n  %i\n  %a")
 
-  %i
-  " "Basic task data")
+      ("m" "Meeting" entry
+       (file+olp "~/gtd/notes.org" "Meetings")
+       "* %U MEETING with %? :MEETING:
+      ,** Notes
 
-  (setq org-capture-templates
-        (quote
-  (
-  ("j" "Journal Entry" entry
-   (file+olp+datetree "~/personal/journal.org")
-  "* %U
-  %?
-  %i
-  %a")
+      ,** Actions
+      "
+       :clock-in t :clock-resume t)
+      	
+      ("p" "Phone" entry
+       (file+olp "~/gtd/notes.org" "Meetings")
+      "
+      ,* %U CALL with %? :CALL:
+       ,** Notes
 
-  ("k" "TKD Entry" entry
-   (file+olp+datetree "~/personal/tkd.org")
-  "* %U
-  %?
-  %i
-  %a")
-  	
-  ("t" "Todo" entry
-   (file+olp "~/gtd/gtd.org" "INBOX")
-  "* TODO %?\n  %i\n  %a")
-
-  ("m" "Meeting" entry
-   (file+olp "~/gtd/notes.org" "Meetings")
-   "* %U MEETING with %? :MEETING:
-  ,** Notes
-
-  ,** Actions
-  "
-   :clock-in t :clock-resume t)
-  	
-  ("p" "Phone" entry
-   (file+olp "~/gtd/notes.org" "Meetings")
-  "
-  ,* %U CALL with %? :CALL:
-   ,** Notes
-
-   ,** Actions
-   " :clock-in t :clock-resume t)
-  	
-  ("n" "Note" entry
-   (file+headline "~/gtd/notes.org" "Notes")
-   "* %u %?" :prepend t)
-  )))
+       ,** Actions
+       " :clock-in t :clock-resume t)
+      	
+      ("n" "Note" entry
+       (file+headline "~/gtd/notes.org" "Notes")
+       "* %u %?" :prepend t)
+      )))
 #+end_src
 
 #+RESULTS:
